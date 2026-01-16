@@ -6,11 +6,11 @@ import tkinter as tk
 from tkinter import filedialog
 import json
 
-# --- 유튜브 쇼츠(Shorts) 및 사운드 설정 ---
+# --- 유튜브 쇼츠(Shorts)용 심플 계명 플레이어 ---
 WIDTH, HEIGHT = 540, 960  # 9:16 비율
 FPS = 60
 WHITE = (255, 255, 255)
-BLACK = (30, 41, 59)
+BLACK = (15, 23, 42)
 RED = (239, 68, 68)
 ORANGE = (255, 60, 0)
 YELLOW = (245, 158, 11)
@@ -26,7 +26,7 @@ GROUPING_THRESHOLD_TICKS = 20
 # MIDI 계명 이름
 PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
-# Keymapping
+# Keymapping (계명 출력용)
 KEY_MAP = {
     "C1": "1", "C#1": "!", "D1": "2", "D#1": "@", "E1": "3", "F1": "4", "F#1": "$", "G1": "5", "G#1": "%", "A1": "6", "A#1": "^", "B1": "7",
     "C2": "8", "C#2": "*", "D2": "9", "D#2": "(", "E2": "0", "F2": "q", "F#2": "Q", "G2": "w", "G#2": "W", "A2": "e", "A#2": "E", "B2": "r",
@@ -46,11 +46,12 @@ class MIDIPlayer:
             print("Audio device not found.")
             
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
-        pygame.display.set_caption("MIDI Shorts Player - 2 Measures Mode")
+        pygame.display.set_caption("MIDI Shorts - Note Labels Only")
         self.clock = pygame.time.Clock()
         
-        self.font = pygame.font.SysFont("Arial", 32, bold=True)
-        self.small_font = pygame.font.SysFont("Arial", 20, bold=True)
+        # 폰트 설정 (더 크고 굵게)
+        self.label_font = pygame.font.SysFont("Arial", 56, bold=True)
+        self.small_font = pygame.font.SysFont("Arial", 22, bold=True)
         self.title_font = pygame.font.SysFont("Arial", 24, bold=True)
         
         self.midi_path = midi_path
@@ -133,51 +134,51 @@ class MIDIPlayer:
                     grouped[n['ticks']] = [n]
             self.measures.append(grouped)
 
-    def draw_stave(self, y_center):
-        """오선지 그리기"""
-        for i in range(5):
-            line_y = y_center - 40 + i * 20
-            pygame.draw.line(self.screen, (210, 210, 215), (40, line_y), (WIDTH - 40, line_y), 2)
-
-    def render_measure(self, measure_idx, y_offset, display_ticks):
-        """특정 마디를 지정된 Y 오프셋에 렌더링"""
+    def render_measure_labels(self, measure_idx, y_offset, display_ticks):
+        """특정 마디의 계명 정보만 렌더링"""
         if measure_idx < 0 or measure_idx >= len(self.measures):
             return
 
         measure = self.measures[measure_idx]
-        self.draw_stave(y_offset)
         
-        # 마디 번호
-        m_txt = self.small_font.render(f"M. {measure_idx + 1}", True, (180, 180, 190))
-        self.screen.blit(m_txt, (45, y_offset - 70))
+        # 마디 구분선 (희미하게)
+        pygame.draw.line(self.screen, (230, 230, 235), (40, y_offset + 100), (WIDTH - 40, y_offset + 100), 2)
+        m_txt = self.small_font.render(f"M. {measure_idx + 1}", True, (160, 160, 170))
+        self.screen.blit(m_txt, (45, y_offset - 40))
         
         for ticks, notes in measure.items():
             rel_ticks = ticks % self.ticks_per_measure
-            x_pos = 70 + (rel_ticks / self.ticks_per_measure) * (WIDTH - 140)
+            x_pos = 80 + (rel_ticks / self.ticks_per_measure) * (WIDTH - 160)
             
             is_active = self.is_playing and abs(display_ticks - ticks) < 40
-            note_color = RED if is_active else BLACK
-            label_color = YELLOW if is_active else (60, 60, 65)
             
-            # 음표
-            for n in notes:
-                note_y = y_offset - (n['note'] - 65) * 4.5
-                pygame.draw.circle(self.screen, note_color, (int(x_pos), int(note_y)), 10)
+            # 활성화된 노트는 노란색, 비활성화는 어두운 회색
+            label_color = YELLOW if is_active else (70, 75, 80)
             
-            # 계명 텍스트
+            # 동시 노트(화음) 처리: 위아래로 쌓아서 표시
             for idx, n in enumerate(notes):
                 char = n['char']
-                char_y = y_offset + 90 + (idx * 45)
-                txt_surf = self.font.render(char, True, label_color)
+                # 화음일 경우 조금씩 겹치게 배치하여 응집성 부여
+                char_y = y_offset + (idx * 60)
+                
+                # 활성화 상태면 텍스트 강조 효과(살짝 더 크게 느낌)
+                txt_surf = self.label_font.render(char, True, label_color)
                 text_rect = txt_surf.get_rect(center=(x_pos, char_y))
+                
+                # 활성 시 뒤에 붉은색 잔상 효과 (선택 사항)
+                if is_active:
+                    glow_rect = text_rect.copy()
+                    glow_rect.y += 2
+                    self.screen.blit(self.label_font.render(char, True, RED), glow_rect)
+
                 self.screen.blit(txt_surf, text_rect)
 
-        # 현재 연주 중인 마디라면 커서 그리기
+        # 현재 연주 바 (인디케이터)
         current_playing_m = int(display_ticks // self.ticks_per_measure)
         if self.is_playing and measure_idx == current_playing_m:
             rel_ticks_now = display_ticks % self.ticks_per_measure
-            playhead_x = 70 + (rel_ticks_now / self.ticks_per_measure) * (WIDTH - 140)
-            pygame.draw.line(self.screen, ORANGE, (playhead_x, y_offset - 50), (playhead_x, y_offset + 50), 4)
+            playhead_x = 80 + (rel_ticks_now / self.ticks_per_measure) * (WIDTH - 160)
+            pygame.draw.line(self.screen, ORANGE, (playhead_x, y_offset - 20), (playhead_x, y_offset + 120), 6)
 
     def render(self):
         self.screen.fill(WHITE)
@@ -185,17 +186,16 @@ class MIDIPlayer:
         display_ticks = self.current_ticks
         current_m_idx = int(display_ticks // self.ticks_per_measure)
         
-        # 2마디 단위로 화면 그룹화 (0-1, 2-3, 4-5 ...)
+        # 2마디 단위 페이징
         page_idx = current_m_idx // 2
         m1_idx = page_idx * 2
         m2_idx = m1_idx + 1
         
-        # 첫 번째 마디 (위쪽)
-        self.render_measure(m1_idx, HEIGHT // 2 - 180, display_ticks)
-        # 두 번째 마디 (아래쪽)
-        self.render_measure(m2_idx, HEIGHT // 2 + 180, display_ticks)
+        # 화면 중앙을 기준으로 두 마디 배치
+        self.render_measure_labels(m1_idx, HEIGHT // 2 - 200, display_ticks)
+        self.render_measure_labels(m2_idx, HEIGHT // 2 + 150, display_ticks)
 
-        # 상단 UI
+        # 상단 정보 UI
         pygame.draw.rect(self.screen, GRAY, (0, 0, WIDTH, 140))
         pygame.draw.line(self.screen, (220, 225, 230), (0, 140), (WIDTH, 140), 2)
         
@@ -203,7 +203,7 @@ class MIDIPlayer:
         title = self.title_font.render(file_title, True, BLACK)
         self.screen.blit(title, (30, 40))
         
-        status_msg = "RECORDING (2-MEASURE MODE)" if self.is_playing else "PAUSED (SPACE)"
+        status_msg = "RECORDING (LABELS ONLY)" if self.is_playing else "PAUSED (SPACE)"
         status = self.small_font.render(status_msg, True, RED if self.is_playing else (120, 125, 130))
         self.screen.blit(status, (30, 75))
         
